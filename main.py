@@ -157,7 +157,31 @@ def run_bot():
     import asyncio
 
     async def bot_main():
-        bot = Application.builder().token(BOT_TOKEN).build()
+        from telegram.request import HTTPXRequest
+
+request = HTTPXRequest(
+    connection_pool_size=8,
+    connect_timeout=30.0,
+    read_timeout=30.0,
+    write_timeout=30.0,
+    pool_timeout=30.0,
+)
+
+get_updates_request = HTTPXRequest(
+    connection_pool_size=2,
+    connect_timeout=30.0,
+    read_timeout=40.0,
+    write_timeout=30.0,
+    pool_timeout=30.0,
+)
+
+bot = (
+    Application.builder()
+    .token(BOT_TOKEN)
+    .request(request)
+    .get_updates_request(get_updates_request)
+    .build()
+)
 
         bot.add_handler(CommandHandler("start", start))
         bot.add_handler(CommandHandler("panel", panel))
