@@ -154,8 +154,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def run_bot():
-    try:
+    import asyncio
+
+    async def bot_main():
         bot = Application.builder().token(BOT_TOKEN).build()
+
         bot.add_handler(CommandHandler("start", start))
         bot.add_handler(CommandHandler("panel", panel))
         bot.add_handler(CommandHandler("status", status))
@@ -165,7 +168,26 @@ def run_bot():
         bot.add_handler(CommandHandler("notice", notice))
         bot.add_handler(CommandHandler("notice_clear", notice_clear))
         bot.add_handler(CallbackQueryHandler(button_handler))
-        bot.run_polling(drop_pending_updates=True)
+
+        await bot.initialize()
+        await bot.start()
+
+        if bot.updater is not None:
+            await bot.updater.start_polling(drop_pending_updates=True)
+
+        log.info("Telegram bot started successfully")
+
+        try:
+            while True:
+                await asyncio.sleep(3600)
+        finally:
+            if bot.updater is not None:
+                await bot.updater.stop()
+            await bot.stop()
+            await bot.shutdown()
+
+    try:
+        asyncio.run(bot_main())
     except Exception:
         log.exception("Telegram bot stopped")
 
