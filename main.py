@@ -1,11 +1,10 @@
 import os
 import asyncio
-import threading
 import logging
 from typing import Optional
 from urllib.parse import urlparse
 
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
@@ -14,24 +13,31 @@ import yt_dlp
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("kmt-control")
+
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 ADMIN_ID_RAW = os.getenv("ADMIN_ID", "").strip()
 APP_API_KEY = os.getenv("APP_API_KEY", "").strip()
+
 if not BOT_TOKEN:
     raise RuntimeError("Missing BOT_TOKEN environment variable")
 if not ADMIN_ID_RAW.isdigit():
     raise RuntimeError("Set ADMIN_ID to your numeric Telegram user ID")
 if not APP_API_KEY:
     raise RuntimeError("Set APP_API_KEY to a long random secret")
+
 ADMIN_ID = int(ADMIN_ID_RAW)
 STATE = {"maintenance": False, "downloads_enabled": True, "notice": ""}
+
 app = FastAPI(title="KMT FB DOWNLOAD API", version="1.1.0")
-_bot_thread: Optional[threading.Thread] = None
-_stop_event = threading.Event()
+
+# Telegram Application instance ကို Global အနေဖြင့် သိမ်းဆည်းမည်
+telegram_app: Optional[Application] = None
+
 
 def is_admin(update: Update) -> bool:
     user = update.effective_user
     return bool(user and user.id == ADMIN_ID)
+
 
 def keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
@@ -41,6 +47,7 @@ def keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton("ℹ️ Current Notice", callback_data="notice")],
     ])
 
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.effective_message
     if message is None: return
@@ -48,26 +55,30 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await message.reply_text("⛔ ဒီ Bot ကို Admin သာ အသုံးပြုနိုင်ပါတယ်။")
         return
     await message.reply_text(
-        "KMT FB DOWNLOAD Control Panel\n\n/panel — Control Panel\n/status — Server/setting status\n"
+        "KMT FB DOWNLOAD Control Panel (Webhook Mode)\n\n/panel — Control Panel\n/status — Server/setting status\n"
         "/maintenance — Maintenance ဖွင့်/ပိတ်\n/download_on — Download ဖွင့်\n"
         "/download_off — Download ပိတ်\n/notice <စာသား> — ကြေညာချက်\n/notice_clear — ကြေညာချက်ဖျက်",
         reply_markup=keyboard())
+
 
 async def panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update):
         await update.effective_message.reply_text("⛔ Admin only."); return
     await update.effective_message.reply_text("Admin Panel — လုပ်ဆောင်ချက်တစ်ခု ရွေးပါ။", reply_markup=keyboard())
 
+
 def status_text():
-    return ("🟢 API process is running\n"
+    return ("🟢 API process is running (Webhook)\n"
             f"Maintenance: {'ON' if STATE['maintenance'] else 'OFF'}\n"
             f"Downloads: {'ON' if STATE['downloads_enabled'] else 'OFF'}\n"
             f"Notice: {STATE['notice'] or '(မရှိပါ)'}")
+
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update):
         await update.effective_message.reply_text("⛔ Admin only."); return
     await update.effective_message.reply_text(status_text(), reply_markup=keyboard())
+
 
 async def maintenance(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update):
@@ -75,17 +86,20 @@ async def maintenance(update: Update, context: ContextTypes.DEFAULT_TYPE):
     STATE["maintenance"] = not STATE["maintenance"]
     await update.effective_message.reply_text(f"🛠 Maintenance {'ON' if STATE['maintenance'] else 'OFF'}", reply_markup=keyboard())
 
+
 async def download_on(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update):
         await update.effective_message.reply_text("⛔ Admin only."); return
     STATE["downloads_enabled"] = True
     await update.effective_message.reply_text("✅ Download function ON", reply_markup=keyboard())
 
+
 async def download_off(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update):
         await update.effective_message.reply_text("⛔ Admin only."); return
     STATE["downloads_enabled"] = False
     await update.effective_message.reply_text("⛔ Download function OFF", reply_markup=keyboard())
+
 
 async def notice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update):
@@ -96,11 +110,13 @@ async def notice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     STATE["notice"] = msg[:1000]
     await update.effective_message.reply_text("✅ Notice သိမ်းပြီးပါပြီ။", reply_markup=keyboard())
 
+
 async def notice_clear(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update):
         await update.effective_message.reply_text("⛔ Admin only."); return
     STATE["notice"] = ""
     await update.effective_message.reply_text("✅ Notice ဖျက်ပြီးပါပြီ။", reply_markup=keyboard())
+
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -119,57 +135,68 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data == "notice":
         await query.edit_message_text(f"Current notice: {STATE['notice'] or '(မရှိပါ)'}", reply_markup=keyboard())
 
-def run_bot():
-    async def bot_main():
-        request = HTTPXRequest(connection_pool_size=8, connect_timeout=30, read_timeout=30, write_timeout=30, pool_timeout=30)
-        updates_request = HTTPXRequest(connection_pool_size=2, connect_timeout=30, read_timeout=40, write_timeout=30, pool_timeout=30)
-        bot_app = Application.builder().token(BOT_TOKEN).request(request).get_updates_request(updates_request).build()
-        bot_app.add_handler(CommandHandler("start", start))
-        bot_app.add_handler(CommandHandler("panel", panel))
-        bot_app.add_handler(CommandHandler("status", status))
-        bot_app.add_handler(CommandHandler("maintenance", maintenance))
-        bot_app.add_handler(CommandHandler("download_on", download_on))
-        bot_app.add_handler(CommandHandler("download_off", download_off))
-        bot_app.add_handler(CommandHandler("notice", notice))
-        bot_app.add_handler(CommandHandler("notice_clear", notice_clear))
-        bot_app.add_handler(CallbackQueryHandler(button_handler))
-        await bot_app.initialize()
-        await bot_app.start()
-        if bot_app.updater is None: raise RuntimeError("Telegram updater is unavailable")
-        await bot_app.updater.start_polling(drop_pending_updates=True,
-            error_callback=lambda error: log.error("Telegram polling error: %s", error, exc_info=error))
-        log.info("Telegram bot polling started")
-        try:
-            while not _stop_event.is_set(): await asyncio.sleep(1)
-        finally:
-            await bot_app.updater.stop()
-            await bot_app.stop()
-            await bot_app.shutdown()
-    try: asyncio.run(bot_main())
-    except Exception: log.exception("Telegram bot stopped")
 
 @app.on_event("startup")
-def startup_event():
-    global _bot_thread
-    _stop_event.clear()
-    _bot_thread = threading.Thread(target=run_bot, name="telegram-bot-thread", daemon=True)
-    _bot_thread.start()
-    log.info("Telegram bot thread launched")
+async def startup_event():
+    global telegram_app
+    request = HTTPXRequest(connection_pool_size=8, connect_timeout=30, read_timeout=30, write_timeout=30, pool_timeout=30)
+    telegram_app = Application.builder().token(BOT_TOKEN).request(request).build()
+    
+    telegram_app.add_handler(CommandHandler("start", start))
+    telegram_app.add_handler(CommandHandler("panel", panel))
+    telegram_app.add_handler(CommandHandler("status", status))
+    telegram_app.add_handler(CommandHandler("maintenance", maintenance))
+    telegram_app.add_handler(CommandHandler("download_on", download_on))
+    telegram_app.add_handler(CommandHandler("download_off", download_off))
+    telegram_app.add_handler(CommandHandler("notice", notice))
+    telegram_app.add_handler(CommandHandler("notice_clear", notice_clear))
+    telegram_app.add_handler(CallbackQueryHandler(button_handler))
+
+    await telegram_app.initialize()
+    await telegram_app.start()
+    log.info("Telegram application initialized for webhook")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    global telegram_app
+    if telegram_app:
+        await telegram_app.stop()
+        await telegram_app.shutdown()
+        log.info("Telegram application shut down")
+
+
+# ==========================================
+# TELEGRAM WEBHOOK ENDPOINT
+# ==========================================
+@app.post("/telegram-webhook")
+async def telegram_webhook(request: Request):
+    if telegram_app is None:
+        raise HTTPException(status_code=500, detail="Telegram app not initialized")
+    data = await request.json()
+    update = Update.de_json(data, telegram_app.bot)
+    await telegram_app.process_update(update)
+    return {"ok": True}
+
 
 @app.get("/")
 def root():
     return {"service": "KMT FB DOWNLOAD API", "status": "ok", "health": "/health", "download_endpoint": "/download"}
 
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
 
 @app.get("/config")
 def public_config():
     return {"maintenance": STATE["maintenance"], "downloads_enabled": STATE["downloads_enabled"], "notice": STATE["notice"]}
 
+
 class DownloadRequest(BaseModel):
     url: str = Field(min_length=8, max_length=2000)
+
 
 def validate_facebook_url(url: str) -> str:
     parsed = urlparse(url.strip())
@@ -178,6 +205,7 @@ def validate_facebook_url(url: str) -> str:
     if parsed.scheme not in ("http", "https") or not allowed:
         raise HTTPException(status_code=400, detail="Facebook သို့မဟုတ် fb.watch link ကိုသာ ထည့်ပါ။")
     return url.strip()
+
 
 def extract_video(url: str):
     opts = {"quiet": True, "no_warnings": True, "skip_download": True, "noplaylist": True,
@@ -205,6 +233,7 @@ def extract_video(url: str):
             "hd_url": hd.get("url") if hd else None,
             "note": "Download URL များသည် ယာယီဖြစ်နိုင်ပြီး သက်တမ်းကုန်ပါက link အသစ်ပြန်ထုတ်ပါ။"}
 
+
 @app.post("/download")
 async def download_video(data: DownloadRequest):
     if STATE["maintenance"]: raise HTTPException(status_code=503, detail="Service maintenance လုပ်နေပါသည်။")
@@ -221,10 +250,12 @@ async def download_video(data: DownloadRequest):
         raise HTTPException(status_code=422, detail="ဒီ video အတွက် တိုက်ရိုက် download link မရရှိပါ။")
     return {"ok": True, **result}
 
+
 class SettingsUpdate(BaseModel):
     maintenance: Optional[bool] = None
     downloads_enabled: Optional[bool] = None
     notice: Optional[str] = None
+
 
 @app.post("/admin/settings")
 def update_settings(data: SettingsUpdate, x_api_key: str = Header(default="")):
