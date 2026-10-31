@@ -411,151 +411,122 @@ def validate_facebook_url(url: str) -> str:
 # ==========================================
 
 def extract_video(url: str):
-    opts = {
-        "quiet": True,
-        "no_warnings": True,
-        "skip_download": True,
-        "noplaylist": True,
-        "socket_timeout": 20,
-        "retries": 1,
-        "extractor_retries": 1,
-        "format": "best"
-    }
+opts = {
+"quiet": True,
+"no_warnings": True,
+"skip_download": True,
+"noplaylist": True,
+"socket_timeout": 20,
+"retries": 1,
+"extractor_retries": 1,
+"format": "best"
+}
 
-    with yt_dlp.YoutubeDL(opts) as ydl:
-        info = ydl.extract_info(url, download=False)
+with yt_dlp.YoutubeDL(opts) as ydl:
+    info = ydl.extract_info(url, download=False)
 
-    if not info:
-        raise ValueError("No video info")
+if not info:
+    raise ValueError("No video info")
 
-    formats = [
-        f for f in (info.get("formats") or [])
-        if f.get("url") and f.get("vcodec") != "none"
+formats = [
+    f for f in (info.get("formats") or [])
+    if f.get("url") and f.get("vcodec") != "none"
+]
+
+if info.get("url") and info.get("vcodec") != "none":
+    formats.append(info)
+
+def has_audio(f):
+    return f.get("acodec") not in (None, "none")
+
+def score(f):
+    return (
+        1 if f.get("ext") == "mp4" else 0,
+        1 if has_audio(f) else 0,
+        f.get("height") or 0,
+        f.get("tbr") or 0
+    )
+
+def choose(max_height=None, min_height=None):
+    options = [
+        f for f in formats
+        if (max_height is None or (f.get("height") or 0) <= max_height)
+        and (min_height is None or (f.get("height") or 0) >= min_height)
     ]
 
-    # Main info ထဲမှာ direct video ရှိရင် ထည့်ထားမယ်
-    if (
-        info.get("url")
-        and info.get("vcodec") != "none"
-    ):
-        formats.append(info)
+    combined = [
+        f for f in options
+        if has_audio(f)
+    ]
 
-    def has_audio(f):
-        return f.get("acodec") not in (
-            None,
-            "none"
-        )
+    pool = combined or options
 
-    def score(f):
-        return (
+    return max(pool, key=score) if pool else None
+
+
+# ==========================================
+# SD — မူရင်း code အတိုင်း လုံးဝမပြောင်းပါ
+# ==========================================
+
+sd = choose(max_height=480) or choose()
+
+
+# ==========================================
+# HD — Audio ပါတဲ့ format ကိုသာ ဦးစားပေးရွေးမည်
+# ==========================================
+
+hd_with_audio = [
+    f for f in formats
+    if (f.get("height") or 0) >= 720
+    and has_audio(f)
+]
+
+if hd_with_audio:
+    hd = max(
+        hd_with_audio,
+        key=lambda f: (
             1 if f.get("ext") == "mp4" else 0,
-            1 if has_audio(f) else 0,
             f.get("height") or 0,
             f.get("tbr") or 0
         )
-
-    # =====================================
-    # SD — မူရင်း Logic ကို မပြောင်းဘူး
-    # =====================================
-
-    sd_options = [
-        f for f in formats
-        if (f.get("height") or 0) <= 480
-    ]
-
-    sd_with_audio = [
-        f for f in sd_options
-        if has_audio(f)
-    ]
-
-    if sd_with_audio:
-        sd = max(sd_with_audio, key=score)
-    elif sd_options:
-        sd = max(sd_options, key=score)
-    else:
-        all_with_audio = [
-            f for f in formats
-            if has_audio(f)
-        ]
-
-        sd = (
-            max(all_with_audio, key=score)
-            if all_with_audio
-            else max(formats, key=score)
-        )
-
-    # =====================================
-    # HD — အသံပါတဲ့ 720p+ ကို အရင်ရှာမယ်
-    # =====================================
-
-    hd_with_audio = [
+    )
+else:
+    # HD quality မှာ audio ပါတဲ့ format မရှိလျှင်
+    # Audio ပါတဲ့ quality အမြင့်ဆုံးကို ပေးမည်
+    all_with_audio = [
         f for f in formats
         if has_audio(f)
-        and (f.get("height") or 0) >= 720
     ]
 
-    if hd_with_audio:
+    hd = (
+        max(all_with_audio, key=score)
+        if all_with_audio
+        else choose(min_height=720) or choose()
+    )
 
-        # Audio ပါတဲ့ HD ထဲက Quality အမြင့်ဆုံး
-        hd = max(
-            hd_with_audio,
-            key=lambda f: (
-                1 if f.get("ext") == "mp4" else 0,
-                f.get("height") or 0,
-                f.get("tbr") or 0
-            )
-        )
 
-    else:
+return {
+    "title": info.get("title") or "Facebook video",
 
-        # 720p+ Audio မပါရင်
-        # Audio ပါတဲ့ Quality အမြင့်ဆုံးကို ရွေးမယ်
-        all_with_audio = [
-            f for f in formats
-            if has_audio(f)
-        ]
+    "thumbnail": info.get("thumbnail"),
 
-        if all_with_audio:
+    "duration": info.get("duration"),
 
-            hd = max(
-                all_with_audio,
-                key=lambda f: (
-                    1 if f.get("ext") == "mp4" else 0,
-                    f.get("height") or 0,
-                    f.get("tbr") or 0
-                )
-            )
+    # SD
+    "sd_url": sd.get("url") if sd else None,
 
-        else:
+    # HD
+    "hd_url": hd.get("url") if hd else None,
 
-            # နောက်ဆုံး fallback
-            hd_options = [
-                f for f in formats
-                if (f.get("height") or 0) >= 720
-            ]
+    # စစ်ဆေးရန်
+    "sd_height": sd.get("height") if sd else 0,
+    "hd_height": hd.get("height") if hd else 0,
 
-            hd = (
-                max(hd_options, key=score)
-                if hd_options
-                else max(formats, key=score)
-            )
+    "sd_has_audio": has_audio(sd) if sd else False,
+    "hd_has_audio": has_audio(hd) if hd else False,
 
-    return {
-        "title": info.get("title") or "Facebook video",
-        "thumbnail": info.get("thumbnail"),
-        "duration": info.get("duration"),
-
-        "sd_url": sd.get("url") if sd else None,
-        "hd_url": hd.get("url") if hd else None,
-
-        "sd_height": sd.get("height") if sd else None,
-        "hd_height": hd.get("height") if hd else None,
-
-        "sd_has_audio": has_audio(sd) if sd else False,
-        "hd_has_audio": has_audio(hd) if hd else False,
-
-        "note": "Download URL များသည် ယာယီဖြစ်နိုင်ပြီး သက်တမ်းကုန်ပါက link အသစ်ပြန်ထုတ်ပါ။"
-    }
+    "note": "Download URL များသည် ယာယီဖြစ်နိုင်ပြီး သက်တမ်းကုန်ပါက link အသစ်ပြန်ထုတ်ပါ။"
+}
 
 
 # ==========================================
