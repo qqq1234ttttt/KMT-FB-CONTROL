@@ -208,30 +208,60 @@ def validate_facebook_url(url: str) -> str:
 
 
 def extract_video(url: str):
-    opts = {"quiet": True, "no_warnings": True, "skip_download": True, "noplaylist": True,
-            "socket_timeout": 20, "retries": 1, "extractor_retries": 1, "format": "best"}
+    opts = {
+        "quiet": True, 
+        "no_warnings": True, 
+        "skip_download": True, 
+        "noplaylist": True,
+        "socket_timeout": 20, 
+        "retries": 1, 
+        "extractor_retries": 1, 
+        "format": "best[height<=480]/best"
+    }
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=False)
-    if not info: raise ValueError("No video info")
-    formats = [f for f in (info.get("formats") or []) if f.get("url") and f.get("vcodec") != "none"]
-    if info.get("url") and info.get("vcodec") != "none": formats.append(info)
-    def score(f):
-        return (1 if f.get("ext") == "mp4" else 0,
-                1 if f.get("acodec") not in (None, "none") else 0,
-                f.get("height") or 0, f.get("tbr") or 0)
-    def choose(max_height=None, min_height=None):
-        options = [f for f in formats
-                   if (max_height is None or (f.get("height") or 0) <= max_height)
-                   and (min_height is None or (f.get("height") or 0) >= min_height)]
-        combined = [f for f in options if f.get("acodec") not in (None, "none")]
-        pool = combined or options
-        return max(pool, key=score) if pool else None
-    sd = choose(max_height=480) or choose()
-    hd = choose(min_height=720) or choose()
-    return {"title": info.get("title") or "Facebook video", "thumbnail": info.get("thumbnail"),
-            "duration": info.get("duration"), "sd_url": sd.get("url") if sd else None,
-            "hd_url": hd.get("url") if hd else None,
-            "note": "Download URL များသည် ယာယီဖြစ်နိုင်ပြီး သက်တမ်းကုန်ပါက link အသစ်ပြန်ထုတ်ပါ။"}
+        
+    if not info: 
+        raise ValueError("No video info")
+        
+    formats = info.get("formats") or []
+    
+    # အသံပါပြီးသား (Muxed) format တွေကို အဓိကရှာပါ
+    muxed_formats = [f for f in formats if f.get("url") and f.get("vcodec") != "none" and f.get("acodec"] not in (None, "none")]
+    
+    if not muxed_formats:
+        muxed_formats = [f for f in formats if f.get("url") and f.get("vcodec") != "none"]
+        
+    if info.get("url") and info.get("vcodec") != "none":
+        muxed_formats.append(info)
+
+    def get_best_by_height(max_h=None, min_h=None):
+        filtered = muxed_formats
+        if max_h is not None:
+            filtered = [f for f in filtered if (f.get("height") or 0) <= max_h]
+        if min_h is not None:
+            filtered = [f for f in filtered if (f.get("height") or 0) >= min_h]
+            
+        if not filtered:
+            return None
+            
+        return max(filtered, key=lambda x: (
+            1 if x.get("acodec") not in (None, "none") else 0,
+            x.get("height") or 0,
+            x.get("tbr") or 0
+        ))
+
+    sd = get_best_by_height(max_h=480) or get_best_by_height()
+    hd = get_best_by_height(min_h=720) or get_best_by_height()
+    
+    return {
+        "title": info.get("title") or "Facebook video", 
+        "thumbnail": info.get("thumbnail"),
+        "duration": info.get("duration"), 
+        "sd_url": sd.get("url") if sd else None,
+        "hd_url": hd.get("url") if hd else None,
+        "note": "Download URL များသည် ယာယီဖြစ်နိုင်ပြီး သက်တမ်းကုန်ပါက link အသစ်ပြန်ထုတ်ပါ။"
+    }
 
 
 @app.post("/download")
