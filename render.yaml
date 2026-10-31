@@ -1,10 +1,11 @@
 services:
   - type: web
-    name: kmt-fb-download
-    env: docker
+    name: kmt-fb-control-api
+    runtime: python
     plan: free
-    buildCommand: ""
-    startCommand: ""
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
     envVars:
       - key: BOT_TOKEN
         sync: false
