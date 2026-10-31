@@ -216,8 +216,9 @@ def extract_video(url: str):
         "socket_timeout": 20, 
         "retries": 1, 
         "extractor_retries": 1, 
-        "format": "best[height<=480]/best"
+        "format": "best[height<=480]/best" # SD အတွက် အရင်ကြိုးစားမည်
     }
+    
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=False)
         
@@ -226,11 +227,12 @@ def extract_video(url: str):
         
     formats = info.get("formats") or []
     
-    # အသံပါပြီးသား (Muxed) format တွေကို အဓိကရှာပါ
+    # အသံပါပြီးသား (Muxed) format တွေကို အဓိကရှာပါ (Facebook မှာ HD အသံပါရန်)
     muxed_formats = [f for f in formats if f.get("url") and f.get("vcodec") != "none" and f.get("acodec") not in (None, "none")]
     
+    # အကယ်၍ muxed format မရှိရင် formats အားလုံးကို ယူမည်
     if not muxed_formats:
-        muxed_formats = [f for f in formats if f.get("url") and f.get("vcodec") != "none"]
+        muxed_formats = [f for f in formats if f.get("url") and f.get("vcodec"] != "none"]
         
     if info.get("url") and info.get("vcodec") != "none":
         muxed_formats.append(info)
@@ -245,15 +247,19 @@ def extract_video(url: str):
         if not filtered:
             return None
             
+        # အသံပါတာကို ဦးစားပေးပြီး ရွေးမည်
         return max(filtered, key=lambda x: (
             1 if x.get("acodec") not in (None, "none") else 0,
             x.get("height") or 0,
             x.get("tbr") or 0
         ))
 
+    # SD အတွက် 480p သို့မဟုတ် အောက်
     sd = get_best_by_height(max_h=480) or get_best_by_height()
-    hd = get_best_by_height(min_h=720) or get_best_by_height()
     
+    # HD အတွက် 720p နှင့် အထက် (အသံပါသောဟာကို ရှာမည်၊ မရှိရင် အကောင်းဆုံးကို ယူမည်)
+    hd = get_best_by_height(min_h=720) or get_best_by_height()
+
     return {
         "title": info.get("title") or "Facebook video", 
         "thumbnail": info.get("thumbnail"),
@@ -261,7 +267,7 @@ def extract_video(url: str):
         "sd_url": sd.get("url") if sd else None,
         "hd_url": hd.get("url") if hd else None,
         "note": "Download URL များသည် ယာယီဖြစ်နိုင်ပြီး သက်တမ်းကုန်ပါက link အသစ်ပြန်ထုတ်ပါ။"
-    }
+                             }
 
 
 @app.post("/download")
