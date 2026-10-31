@@ -411,7 +411,6 @@ def validate_facebook_url(url: str) -> str:
 # ==========================================
 
 def extract_video(url: str):
-
     opts = {
         "quiet": True,
         "no_warnings": True,
@@ -424,99 +423,81 @@ def extract_video(url: str):
     }
 
     with yt_dlp.YoutubeDL(opts) as ydl:
-        info = ydl.extract_info(
-            url,
-            download=False
-        )
+        info = ydl.extract_info(url, download=False)
 
     if not info:
         raise ValueError("No video info")
 
     formats = [
         f for f in (info.get("formats") or [])
-        if f.get("url")
-        and f.get("vcodec") not in (None, "none")
+        if f.get("url") and f.get("vcodec") != "none"
     ]
 
-    if (
-        info.get("url")
-        and info.get("vcodec") not in (None, "none")
-    ):
+    if info.get("url") and info.get("vcodec") != "none":
         formats.append(info)
 
-    # Audio ပါ/မပါ စစ်ဆေးမည်
-    def has_audio(f):
-        return f.get("acodec") not in (None, "none")
-
-    # Quality Score
     def score(f):
         return (
-            1 if has_audio(f) else 0,
             1 if f.get("ext") == "mp4" else 0,
+            1 if f.get("acodec") not in (None, "none") else 0,
             f.get("height") or 0,
             f.get("tbr") or 0
         )
 
-    # Video Format ရွေးချယ်မည်
-    def choose(max_height=None, min_height=None, audio_only=False):
-
+    def choose(max_height=None, min_height=None):
         options = [
             f for f in formats
-            if (
-                max_height is None
-                or (f.get("height") or 0) <= max_height
-            )
-            and (
-                min_height is None
-                or (f.get("height") or 0) >= min_height
-            )
-            and (
-                not audio_only
-                or has_audio(f)
-            )
+            if (max_height is None or (f.get("height") or 0) <= max_height)
+            and (min_height is None or (f.get("height") or 0) >= min_height)
         ]
 
-        return max(options, key=score) if options else None
+        combined = [
+            f for f in options
+            if f.get("acodec") not in (None, "none")
+        ]
 
-    # SD - Audio ပါသော Format ကို ဦးစားပေးမည်
-    sd = (
-        choose(max_height=480, audio_only=True)
-        or choose(audio_only=True)
-        or choose(max_height=480)
-        or choose()
-    )
+        pool = combined or options
 
-    # HD - 720p နှင့်အထက် Audio ပါသော Format ကို ဦးစားပေးမည်
+        return max(pool, key=score) if pool else None
+
+    # SD: မူရင်း Logic အတိုင်း ပြန်ထားသည်
+    sd = choose(max_height=480) or choose()
+
+    # HD: SD နှင့် သီးခြားရွေးချယ်မည်
+    hd_audio = [
+        f for f in formats
+        if f.get("acodec") not in (None, "none")
+        and (f.get("height") or 0) >= 720
+    ]
+
     hd = (
-        choose(min_height=720, audio_only=True)
-        or choose(audio_only=True)
-        or choose(min_height=720)
-        or choose()
+        max(hd_audio, key=score)
+        if hd_audio
+        else choose(min_height=720) or choose()
     )
 
     return {
         "title": info.get("title") or "Facebook video",
-
         "thumbnail": info.get("thumbnail"),
-
         "duration": info.get("duration"),
 
         "sd_url": sd.get("url") if sd else None,
-
         "hd_url": hd.get("url") if hd else None,
 
         "sd_height": sd.get("height") if sd else None,
-
         "hd_height": hd.get("height") if hd else None,
 
-        "sd_has_audio": has_audio(sd) if sd else False,
+        "sd_has_audio": (
+            sd.get("acodec") not in (None, "none")
+            if sd else False
+        ),
 
-        "hd_has_audio": has_audio(hd) if hd else False,
+        "hd_has_audio": (
+            hd.get("acodec") not in (None, "none")
+            if hd else False
+        ),
 
-        "note": (
-            "Download URL များသည် ယာယီဖြစ်နိုင်ပြီး "
-            "သက်တမ်းကုန်ပါက link အသစ်ပြန်ထုတ်ပါ။"
-        )
+        "note": "Download URL များသည် ယာယီဖြစ်နိုင်ပြီး သက်တမ်းကုန်ပါက link အသစ်ပြန်ထုတ်ပါ။"
     }
 
 
