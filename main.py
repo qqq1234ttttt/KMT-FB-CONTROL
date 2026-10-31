@@ -208,31 +208,62 @@ def validate_facebook_url(url: str) -> str:
 
 
 def extract_video(url: str):
-    opts = {"quiet": True, "no_warnings": True, "skip_download": True, "noplaylist": True,
-            "socket_timeout": 20, "retries": 1, "extractor_retries": 1, "format": "best"}
+    opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "skip_download": True,
+        "noplaylist": True,
+        "socket_timeout": 20,
+        "retries": 1,
+        "extractor_retries": 1,
+        "format": "best"
+    }
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=False)
-    if not info: raise ValueError("No video info")
-    formats = [f for f in (info.get("formats") or []) if f.get("url") and f.get("vcodec") != "none"]
-    if info.get("url") and info.get("vcodec") != "none": formats.append(info)
-    def score(f):
-        return (1 if f.get("ext") == "mp4" else 0,
-                1 if f.get("acodec") not in (None, "none") else 0,
-                f.get("height") or 0, f.get("tbr") or 0)
-    def choose(max_height=None, min_height=None):
-        options = [f for f in formats
-                   if (max_height is None or (f.get("height") or 0) <= max_height)
-                   and (min_height is None or (f.get("height") or 0) >= min_height)]
-        combined = [f for f in options if f.get("acodec") not in (None, "none")]
-        pool = combined or options
-        return max(pool, key=score) if pool else None
-    sd = choose(max_height=480) or choose()
-    hd = choose(min_height=720) or choose()
-    return {"title": info.get("title") or "Facebook video", "thumbnail": info.get("thumbnail"),
-            "duration": info.get("duration"), "sd_url": sd.get("url") if sd else None,
-            "hd_url": hd.get("url") if hd else None,
-            "note": "Download URL များသည် ယာယီဖြစ်နိုင်ပြီး သက်တမ်းကုန်ပါက link အသစ်ပြန်ထုတ်ပါ။"}
+    
+    if not info: 
+        raise ValueError("No video info")
+    
+    formats = info.get("formats") or []
+    
+    # ရနိုင်သမျှ formats ထဲက video နဲ့ audio နှစ်ခုစလုံး (သို့မဟုတ်) အသံအပါအဝင် အကောင်းဆုံးရမည့်ဟာကို ရွေးရန်
+    def choose_format(min_h=None, max_h=None):
+        filtered = []
+        for f in formats:
+            vcodec = f.get("vcodec", "none")
+            acodec = f.get("acodec", "none")
+            height = f.get("height") or 0
+            
+            # Resolution အတိုင်းအဆ စစ်ဆေးရန်
+            if min_h and height < min_h: continue
+            if max_h and height > max_h: continue
+            
+            # URL ရှိရမည်
+            if not f.get("url"): continue
+            
+            filtered.append(f)
+        
+        if not filtered:
+            return None
+            
+        # အသံပါတဲ့ဟာကို ဦးစားပေးရွေးချယ်ရန် (acodec != none)
+        with_audio = [f for f in filtered if f.get("acodec") != "none"]
+        if with_audio:
+            return max(with_audio, key=lambda x: (x.get("height") or 0, x.get("tbr") or 0))
+        
+        # အသံမပါရင်တောင်မှ အမြင့်ဆုံး resolution ကို ယူရန်
+        return max(filtered, key=lambda x: (x.get("height") or 0, x.get("tbr") or 0))
 
+    sd = choose_format(max_h=480) or choose_format()
+    hd = choose_format(min_h=720) or choose_format()
+
+    return {
+        "title": info.get("title") or "Facebook video", 
+        "thumbnail": info.get("thumbnail"),
+        "duration": info.get("duration"), 
+        "sd_url": sd.get("url") if sd else None,
+        "hd_url": hd.get("url") if hd else None,
+        "note": "Download URL များသည် ယာယီဖြစ်နိုင်ပြီး သက်တမ်းကုန်ပါက link အသစ်ပြန်ထုတ်ပါ။"}
 
 @app.post("/download")
 async def download_video(data: DownloadRequest):
