@@ -428,13 +428,17 @@ with yt_dlp.YoutubeDL(opts) as ydl:
 if not info:
     raise ValueError("No video info")
 
-formats = [
-    f for f in (info.get("formats") or [])
-    if f.get("url") and f.get("vcodec") != "none"
-]
+formats = []
+
+for f in (info.get("formats") or []):
+    if f.get("url") and f.get("vcodec") != "none":
+        formats.append(f)
 
 if info.get("url") and info.get("vcodec") != "none":
     formats.append(info)
+
+if not formats:
+    raise ValueError("No video formats found")
 
 def has_audio(f):
     return f.get("acodec") not in (None, "none")
@@ -448,83 +452,76 @@ def score(f):
     )
 
 def choose(max_height=None, min_height=None):
-    options = [
-        f for f in formats
-        if (max_height is None or (f.get("height") or 0) <= max_height)
-        and (min_height is None or (f.get("height") or 0) >= min_height)
-    ]
+    options = []
 
-    combined = [
-        f for f in options
-        if has_audio(f)
-    ]
+    for f in formats:
+        height = f.get("height") or 0
 
-    pool = combined or options
+        if max_height is not None and height > max_height:
+            continue
 
-    return max(pool, key=score) if pool else None
+        if min_height is not None and height < min_height:
+            continue
 
+        options.append(f)
 
-# ==========================================
-# SD — မူရင်း code အတိုင်း လုံးဝမပြောင်းပါ
-# ==========================================
+    combined = []
 
-sd = choose(max_height=480) or choose()
+    for f in options:
+        if has_audio(f):
+            combined.append(f)
 
+    pool = combined if combined else options
 
-# ==========================================
-# HD — Audio ပါတဲ့ format ကိုသာ ဦးစားပေးရွေးမည်
-# ==========================================
+    if pool:
+        return max(pool, key=score)
 
-hd_with_audio = [
-    f for f in formats
-    if (f.get("height") or 0) >= 720
-    and has_audio(f)
-]
+    return None
+
+# SD - မူရင်း logic အတိုင်း
+sd = choose(max_height=480)
+
+if sd is None:
+    sd = choose()
+
+# HD - 720p နှင့်အထက် + Audio ပါတာကို ရှာမယ်
+hd_with_audio = []
+
+for f in formats:
+    height = f.get("height") or 0
+
+    if height >= 720 and has_audio(f):
+        hd_with_audio.append(f)
 
 if hd_with_audio:
-    hd = max(
-        hd_with_audio,
-        key=lambda f: (
-            1 if f.get("ext") == "mp4" else 0,
-            f.get("height") or 0,
-            f.get("tbr") or 0
-        )
-    )
+    hd = max(hd_with_audio, key=score)
 else:
-    # HD quality မှာ audio ပါတဲ့ format မရှိလျှင်
-    # Audio ပါတဲ့ quality အမြင့်ဆုံးကို ပေးမည်
-    all_with_audio = [
-        f for f in formats
-        if has_audio(f)
-    ]
+    # 720p+ မှာ Audio မရှိရင်
+    # Audio ပါတဲ့ quality အမြင့်ဆုံးကို ရွေးမယ်
+    all_with_audio = []
 
-    hd = (
-        max(all_with_audio, key=score)
-        if all_with_audio
-        else choose(min_height=720) or choose()
-    )
+    for f in formats:
+        if has_audio(f):
+            all_with_audio.append(f)
 
+    if all_with_audio:
+        hd = max(all_with_audio, key=score)
+    else:
+        hd = choose(min_height=720)
+
+        if hd is None:
+            hd = choose()
 
 return {
     "title": info.get("title") or "Facebook video",
-
     "thumbnail": info.get("thumbnail"),
-
     "duration": info.get("duration"),
-
-    # SD
     "sd_url": sd.get("url") if sd else None,
-
-    # HD
     "hd_url": hd.get("url") if hd else None,
-
-    # စစ်ဆေးရန်
     "sd_height": sd.get("height") if sd else 0,
     "hd_height": hd.get("height") if hd else 0,
-
     "sd_has_audio": has_audio(sd) if sd else False,
     "hd_has_audio": has_audio(hd) if hd else False,
-
     "note": "Download URL များသည် ယာယီဖြစ်နိုင်ပြီး သက်တမ်းကုန်ပါက link အသစ်ပြန်ထုတ်ပါ။"
 }
 
