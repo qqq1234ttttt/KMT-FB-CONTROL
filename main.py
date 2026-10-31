@@ -7,15 +7,9 @@ from urllib.parse import urlparse
 from fastapi import FastAPI, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import (
-    Application,
-    CommandHandler,
-    CallbackQueryHandler,
-    ContextTypes
-)
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 from telegram.request import HTTPXRequest
 import yt_dlp
-
 
 logging.basicConfig(
     level=logging.INFO,
@@ -24,11 +18,9 @@ logging.basicConfig(
 
 log = logging.getLogger("kmt-control")
 
-
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 ADMIN_ID_RAW = os.getenv("ADMIN_ID", "").strip()
 APP_API_KEY = os.getenv("APP_API_KEY", "").strip()
-
 
 if not BOT_TOKEN:
     raise RuntimeError("Missing BOT_TOKEN environment variable")
@@ -39,7 +31,6 @@ if not ADMIN_ID_RAW.isdigit():
 if not APP_API_KEY:
     raise RuntimeError("Set APP_API_KEY to a long random secret")
 
-
 ADMIN_ID = int(ADMIN_ID_RAW)
 
 STATE = {
@@ -47,7 +38,6 @@ STATE = {
     "downloads_enabled": True,
     "notice": ""
 }
-
 
 app = FastAPI(
     title="KMT FB DOWNLOAD API",
@@ -68,35 +58,17 @@ def is_admin(update: Update) -> bool:
 
 def keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
+        [InlineKeyboardButton("📊 Status", callback_data="status")],
         [
-            InlineKeyboardButton(
-                "📊 Status",
-                callback_data="status"
-            )
+            InlineKeyboardButton("🛠 Maintenance ON/OFF", callback_data="maintenance"),
+            InlineKeyboardButton("⬇️ Download ON/OFF", callback_data="downloads")
         ],
-        [
-            InlineKeyboardButton(
-                "🛠 Maintenance ON/OFF",
-                callback_data="maintenance"
-            ),
-            InlineKeyboardButton(
-                "⬇️ Download ON/OFF",
-                callback_data="downloads"
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                "ℹ️ Current Notice",
-                callback_data="notice"
-            )
-        ]
+        [InlineKeyboardButton("ℹ️ Current Notice", callback_data="notice")]
     ])
 
 
-async def start(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE
-):
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     message = update.effective_message
 
     if message is None:
@@ -121,14 +93,10 @@ async def start(
     )
 
 
-async def panel(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE
-):
+async def panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     if not is_admin(update):
-        await update.effective_message.reply_text(
-            "⛔ Admin only."
-        )
+        await update.effective_message.reply_text("⛔ Admin only.")
         return
 
     await update.effective_message.reply_text(
@@ -138,6 +106,7 @@ async def panel(
 
 
 def status_text():
+
     return (
         "🟢 API process is running (Webhook)\n"
         f"Maintenance: {'ON' if STATE['maintenance'] else 'OFF'}\n"
@@ -146,14 +115,10 @@ def status_text():
     )
 
 
-async def status(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE
-):
+async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     if not is_admin(update):
-        await update.effective_message.reply_text(
-            "⛔ Admin only."
-        )
+        await update.effective_message.reply_text("⛔ Admin only.")
         return
 
     await update.effective_message.reply_text(
@@ -162,14 +127,10 @@ async def status(
     )
 
 
-async def maintenance(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE
-):
+async def maintenance(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     if not is_admin(update):
-        await update.effective_message.reply_text(
-            "⛔ Admin only."
-        )
+        await update.effective_message.reply_text("⛔ Admin only.")
         return
 
     STATE["maintenance"] = not STATE["maintenance"]
@@ -180,14 +141,10 @@ async def maintenance(
     )
 
 
-async def download_on(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE
-):
+async def download_on(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     if not is_admin(update):
-        await update.effective_message.reply_text(
-            "⛔ Admin only."
-        )
+        await update.effective_message.reply_text("⛔ Admin only.")
         return
 
     STATE["downloads_enabled"] = True
@@ -198,14 +155,10 @@ async def download_on(
     )
 
 
-async def download_off(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE
-):
+async def download_off(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     if not is_admin(update):
-        await update.effective_message.reply_text(
-            "⛔ Admin only."
-        )
+        await update.effective_message.reply_text("⛔ Admin only.")
         return
 
     STATE["downloads_enabled"] = False
@@ -216,14 +169,10 @@ async def download_off(
     )
 
 
-async def notice(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE
-):
+async def notice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     if not is_admin(update):
-        await update.effective_message.reply_text(
-            "⛔ Admin only."
-        )
+        await update.effective_message.reply_text("⛔ Admin only.")
         return
 
     msg = " ".join(context.args).strip()
@@ -242,14 +191,10 @@ async def notice(
     )
 
 
-async def notice_clear(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE
-):
+async def notice_clear(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     if not is_admin(update):
-        await update.effective_message.reply_text(
-            "⛔ Admin only."
-        )
+        await update.effective_message.reply_text("⛔ Admin only.")
         return
 
     STATE["notice"] = ""
@@ -260,20 +205,15 @@ async def notice_clear(
     )
 
 
-async def button_handler(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE
-):
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     query = update.callback_query
 
     if query is None:
         return
 
     if not update.effective_user or update.effective_user.id != ADMIN_ID:
-        await query.answer(
-            "Admin only",
-            show_alert=True
-        )
+        await query.answer("Admin only", show_alert=True)
         return
 
     await query.answer()
@@ -335,41 +275,15 @@ async def startup_event():
         .build()
     )
 
-    telegram_app.add_handler(
-        CommandHandler("start", start)
-    )
-
-    telegram_app.add_handler(
-        CommandHandler("panel", panel)
-    )
-
-    telegram_app.add_handler(
-        CommandHandler("status", status)
-    )
-
-    telegram_app.add_handler(
-        CommandHandler("maintenance", maintenance)
-    )
-
-    telegram_app.add_handler(
-        CommandHandler("download_on", download_on)
-    )
-
-    telegram_app.add_handler(
-        CommandHandler("download_off", download_off)
-    )
-
-    telegram_app.add_handler(
-        CommandHandler("notice", notice)
-    )
-
-    telegram_app.add_handler(
-        CommandHandler("notice_clear", notice_clear)
-    )
-
-    telegram_app.add_handler(
-        CallbackQueryHandler(button_handler)
-    )
+    telegram_app.add_handler(CommandHandler("start", start))
+    telegram_app.add_handler(CommandHandler("panel", panel))
+    telegram_app.add_handler(CommandHandler("status", status))
+    telegram_app.add_handler(CommandHandler("maintenance", maintenance))
+    telegram_app.add_handler(CommandHandler("download_on", download_on))
+    telegram_app.add_handler(CommandHandler("download_off", download_off))
+    telegram_app.add_handler(CommandHandler("notice", notice))
+    telegram_app.add_handler(CommandHandler("notice_clear", notice_clear))
+    telegram_app.add_handler(CallbackQueryHandler(button_handler))
 
     await telegram_app.initialize()
     await telegram_app.start()
@@ -383,7 +297,6 @@ async def shutdown_event():
     global telegram_app
 
     if telegram_app:
-
         await telegram_app.stop()
         await telegram_app.shutdown()
 
@@ -391,7 +304,7 @@ async def shutdown_event():
 
 
 # ==========================================
-# TELEGRAM WEBHOOK ENDPOINT
+# TELEGRAM WEBHOOK
 # ==========================================
 
 @app.post("/telegram-webhook")
@@ -405,10 +318,7 @@ async def telegram_webhook(request: Request):
 
     data = await request.json()
 
-    update = Update.de_json(
-        data,
-        telegram_app.bot
-    )
+    update = Update.de_json(data, telegram_app.bot)
 
     await telegram_app.process_update(update)
 
@@ -416,7 +326,7 @@ async def telegram_webhook(request: Request):
 
 
 # ==========================================
-# API ROOT
+# ROOT API
 # ==========================================
 
 @app.get("/")
@@ -433,9 +343,7 @@ def root():
 @app.get("/health")
 def health():
 
-    return {
-        "status": "ok"
-    }
+    return {"status": "ok"}
 
 
 @app.get("/config")
@@ -468,9 +376,7 @@ def validate_facebook_url(url: str) -> str:
 
     parsed = urlparse(url.strip())
 
-    host = (
-        parsed.hostname or ""
-    ).lower().rstrip(".")
+    host = (parsed.hostname or "").lower().rstrip(".")
 
     allowed = (
         host == "facebook.com"
@@ -491,7 +397,7 @@ def validate_facebook_url(url: str) -> str:
 
 # ==========================================
 # VIDEO EXTRACTION
-# SD + HD AUDIO SYSTEM
+# AUDIO ENABLED SD / HD
 # ==========================================
 
 def extract_video(url: str):
@@ -501,10 +407,10 @@ def extract_video(url: str):
         "no_warnings": True,
         "skip_download": True,
         "noplaylist": True,
-        "socket_timeout": 20,
+        "socket_timeout": 30,
         "retries": 2,
         "extractor_retries": 2,
-        "format": "best"
+        "format": "best[acodec!=none][vcodec!=none]/best"
     }
 
     with yt_dlp.YoutubeDL(opts) as ydl:
@@ -521,94 +427,62 @@ def extract_video(url: str):
         f for f in (info.get("formats") or [])
         if f.get("url")
         and f.get("vcodec") != "none"
-        and f.get("acodec") not in (None, "none")
     ]
 
-    # Direct URL ကိုလည်း စစ်ဆေးမယ်
-    direct = info.get("url")
-
-    if (
-        direct
-        and info.get("vcodec") != "none"
-        and info.get("acodec") not in (None, "none")
-    ):
+    if info.get("url") and info.get("vcodec") != "none":
         formats.append(info)
 
-    # အသံပါတဲ့ Format မရှိရင် မရွေးတော့ပါ
-    if not formats:
-        raise ValueError(
-            "No video format with audio available"
-        )
+    # Audio ပါသော Format များ
+    audio_formats = [
+        f for f in formats
+        if f.get("acodec") not in (None, "none")
+    ]
 
-    # MP4 ကို ဦးစားပေးပြီး Quality ရွေးမယ်
+    usable = audio_formats or formats
+
+    if not usable:
+        raise ValueError("No usable video format")
+
     def score(f):
 
         return (
+            1 if f.get("acodec") not in (None, "none") else 0,
             1 if f.get("ext") == "mp4" else 0,
             f.get("height") or 0,
             f.get("tbr") or 0
         )
 
-    # ======================================
-    # SD QUALITY
-    # အသံပါတဲ့ 480p သို့မဟုတ် အောက်
-    # ======================================
-
+    # SD Quality
     sd_options = [
-        f for f in formats
+        f for f in usable
         if (f.get("height") or 0) <= 480
     ]
 
     if sd_options:
 
-        sd = max(
-            sd_options,
-            key=score
-        )
+        sd = max(sd_options, key=score)
 
     else:
 
         sd = min(
-            formats,
+            usable,
             key=lambda f: (
                 f.get("height") or 99999,
                 f.get("tbr") or 99999
             )
         )
 
-    # ======================================
-    # HD QUALITY
-    # အသံပါတဲ့ Quality အမြင့်ဆုံး
-    # ======================================
-
-    hd = max(
-        formats,
-        key=score
-    )
-
-    # ======================================
-    # RETURN RESULT
-    # ======================================
+    # HD Quality
+    # Audio ပါသော Format ထဲက Quality အမြင့်ဆုံး
+    hd = max(usable, key=score)
 
     return {
-
-        "title": (
-            info.get("title")
-            or "Facebook video"
-        ),
-
+        "title": info.get("title") or "Facebook video",
         "thumbnail": info.get("thumbnail"),
-
         "duration": info.get("duration"),
-
         "sd_url": sd.get("url"),
-
         "hd_url": hd.get("url"),
-
-        "note": (
-            "SD and HD use audio-enabled video streams. "
-            "HD selects the best available progressive quality."
-        )
+        "note": "Audio-enabled progressive streams selected for SD and HD."
     }
 
 
@@ -633,9 +507,7 @@ async def download_video(data: DownloadRequest):
             detail="Download လုပ်ဆောင်ချက်ကို Admin က ပိတ်ထားပါသည်။"
         )
 
-    url = validate_facebook_url(
-        data.url
-    )
+    url = validate_facebook_url(data.url)
 
     try:
 
@@ -654,16 +526,16 @@ async def download_video(data: DownloadRequest):
             detail="Video စစ်ဆေးချိန်ကုန်သွားပါပြီ။ နောက်တစ်ကြိမ် စမ်းပါ။"
         )
 
+    except HTTPException:
+        raise
+
     except Exception as exc:
 
-        log.warning(
-            "Video extraction failed: %s",
-            exc
-        )
+        log.exception("Video extraction failed")
 
         raise HTTPException(
             status_code=422,
-            detail="ဒီ video ကို မရယူနိုင်ပါ။ Public video link ဖြစ်ကြောင်း စစ်ပြီး ပြန်စမ်းပါ။"
+            detail=str(exc)[:500]
         )
 
     if not result.get("sd_url") and not result.get("hd_url"):
@@ -686,9 +558,7 @@ async def download_video(data: DownloadRequest):
 class SettingsUpdate(BaseModel):
 
     maintenance: Optional[bool] = None
-
     downloads_enabled: Optional[bool] = None
-
     notice: Optional[str] = None
 
 
@@ -706,15 +576,12 @@ def update_settings(
         )
 
     if data.maintenance is not None:
-
         STATE["maintenance"] = data.maintenance
 
     if data.downloads_enabled is not None:
-
         STATE["downloads_enabled"] = data.downloads_enabled
 
     if data.notice is not None:
-
         STATE["notice"] = data.notice[:1000]
 
     return {
