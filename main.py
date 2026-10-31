@@ -232,7 +232,7 @@ def extract_video(url: str):
     
     # အကယ်၍ muxed format မရှိရင် formats အားလုံးကို ယူမည်
     if not muxed_formats:
-        muxed_formats = [f for f in formats if f.get("url") and f.get("vcodec"] != "none"]
+        muxed_formats = [f for f in formats if f.get("url") and f.get("vcodec") != "none"]
         
     if info.get("url") and info.get("vcodec") != "none":
         muxed_formats.append(info)
@@ -267,8 +267,7 @@ def extract_video(url: str):
         "sd_url": sd.get("url") if sd else None,
         "hd_url": hd.get("url") if hd else None,
         "note": "Download URL များသည် ယာယီဖြစ်နိုင်ပြီး သက်တမ်းကုန်ပါက link အသစ်ပြန်ထုတ်ပါ။"
-                             }
-
+    }
 
 @app.post("/download")
 async def download_video(data: DownloadRequest):
