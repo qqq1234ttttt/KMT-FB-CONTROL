@@ -30,7 +30,6 @@ STATE = {"maintenance": False, "downloads_enabled": True, "notice": ""}
 
 app = FastAPI(title="KMT FB DOWNLOAD API", version="1.1.0")
 
-# Telegram Application instance ကို Global အနေဖြင့် သိမ်းဆည်းမည်
 telegram_app: Optional[Application] = None
 
 
@@ -166,9 +165,6 @@ async def shutdown_event():
         log.info("Telegram application shut down")
 
 
-# ==========================================
-# TELEGRAM WEBHOOK ENDPOINT
-# ==========================================
 @app.post("/telegram-webhook")
 async def telegram_webhook(request: Request):
     if telegram_app is None:
@@ -216,7 +212,7 @@ def extract_video(url: str):
         "socket_timeout": 20, 
         "retries": 1, 
         "extractor_retries": 1, 
-        "format": "best[height<=480]/best"
+        "format": "best"
     }
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=False)
@@ -226,8 +222,7 @@ def extract_video(url: str):
         
     formats = info.get("formats") or []
     
-    # အသံပါပြီးသား (Muxed) format တွေကို အဓိကရှာပါ
-    muxed_formats = [f for f in formats if f.get("url") and f.get("vcodec") != "none" and f.get("acodec") not in (None, "none")]
+    muxed_formats = [f for f in formats if f.get("url") and f.get("vcodec"] != "none" and f.get("acodec") not in (None, "none")] # type: ignore
     
     if not muxed_formats:
         muxed_formats = [f for f in formats if f.get("url") and f.get("vcodec") != "none"]
@@ -251,17 +246,9 @@ def extract_video(url: str):
             x.get("tbr") or 0
         ))
 
-    # HD အတွက် အသံပါပြီးသား (acodec ပါသော) 720p သို့မဟုတ် အကောင်းဆုံး Quality ကို ဦးစားပေးရှာမည်
-    def get_best_hd():
-        filtered = [f for f in muxed_formats if (f.get("height") or 0) >= 720 and f.get("acodec") not in (None, "none")]
-        if not filtered:
-            filtered = [f for f in muxed_formats if f.get("acodec") not in (None, "none")]
-        if not filtered:
-            return get_best_by_height()
-        return max(filtered, key=lambda x: (x.get("height") or 0, x.get("tbr") or 0))
-
-    sd = get_best_by_height(max_h=480) or get_best_by_height()
-    hd = get_best_hd()
+    # SD နဲ့ HD နှစ်ခုစလုံးကို အသံပါပြီးသား အကောင်းဆုံး format နဲ့ တူတူပေးလိုက်ပါမည် (နာမည်ပဲ HD ဖြစ်သွားပါမည်)
+    sd = get_best_by_height()
+    hd = get_best_by_height()
     
     return {
         "title": info.get("title") or "Facebook video", 
