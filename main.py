@@ -49,7 +49,8 @@ def keyboard() -> InlineKeyboardMarkup:
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.effective_message
-    if message is None: return
+    if message is None: 
+        return
     if not is_admin(update):
         await message.reply_text("⛔ ဒီ Bot ကို Admin သာ အသုံးပြုနိုင်ပါတယ်။")
         return
@@ -62,7 +63,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update):
-        await update.effective_message.reply_text("⛔ Admin only."); return
+        await update.effective_message.reply_text("⛔ Admin only.")
+        return
     await update.effective_message.reply_text("Admin Panel — လုပ်ဆောင်ချက်တစ်ခု ရွေးပါ။", reply_markup=keyboard())
 
 
@@ -75,53 +77,62 @@ def status_text():
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update):
-        await update.effective_message.reply_text("⛔ Admin only."); return
+        await update.effective_message.reply_text("⛔ Admin only.")
+        return
     await update.effective_message.reply_text(status_text(), reply_markup=keyboard())
 
 
 async def maintenance(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update):
-        await update.effective_message.reply_text("⛔ Admin only."); return
+        await update.effective_message.reply_text("⛔ Admin only.")
+        return
     STATE["maintenance"] = not STATE["maintenance"]
     await update.effective_message.reply_text(f"🛠 Maintenance {'ON' if STATE['maintenance'] else 'OFF'}", reply_markup=keyboard())
 
 
 async def download_on(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update):
-        await update.effective_message.reply_text("⛔ Admin only."); return
+        await update.effective_message.reply_text("⛔ Admin only.")
+        return
     STATE["downloads_enabled"] = True
     await update.effective_message.reply_text("✅ Download function ON", reply_markup=keyboard())
 
 
 async def download_off(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update):
-        await update.effective_message.reply_text("⛔ Admin only."); return
+        await update.effective_message.reply_text("⛔ Admin only.")
+        return
     STATE["downloads_enabled"] = False
     await update.effective_message.reply_text("⛔ Download function OFF", reply_markup=keyboard())
 
 
 async def notice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update):
-        await update.effective_message.reply_text("⛔ Admin only."); return
+        await update.effective_message.reply_text("⛔ Admin only.")
+        return
     msg = " ".join(context.args).strip()
     if not msg:
-        await update.effective_message.reply_text("အသုံးပြုပုံ: /notice မင်္ဂလာပါ။ Server ပြုပြင်နေပါသည်။"); return
+        await update.effective_message.reply_text("အသုံးပြုပုံ: /notice မင်္ဂလာပါ။ Server ပြုပြင်နေပါသည်။")
+        return
     STATE["notice"] = msg[:1000]
     await update.effective_message.reply_text("✅ Notice သိမ်းပြီးပါပြီ။", reply_markup=keyboard())
 
 
 async def notice_clear(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update):
-        await update.effective_message.reply_text("⛔ Admin only."); return
+        await update.effective_message.reply_text("⛔ Admin only.")
+        return
     STATE["notice"] = ""
     await update.effective_message.reply_text("✅ Notice ဖျက်ပြီးပါပြီ။", reply_markup=keyboard())
 
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    if query is None: return
+    if query is None: 
+        return
     if not update.effective_user or update.effective_user.id != ADMIN_ID:
-        await query.answer("Admin only", show_alert=True); return
+        await query.answer("Admin only", show_alert=True)
+        return
     await query.answer()
     if query.data == "status":
         await query.edit_message_text(status_text(), reply_markup=keyboard())
@@ -222,7 +233,8 @@ def extract_video(url: str):
         
     formats = info.get("formats") or []
     
-    muxed_formats = [f for f in formats if f.get("url") and f.get("vcodec"] != "none" and f.get("acodec") not in (None, "none")] # type: ignore
+    # ဒီနေရာမှာ ကွင်းစကွင်းပိတ် အမှန်ပြင်ထားပါတယ် (f.get("vcodec") != "none")
+    muxed_formats = [f for f in formats if f.get("url") and f.get("vcodec") != "none" and f.get("acodec") not in (None, "none")]
     
     if not muxed_formats:
         muxed_formats = [f for f in formats if f.get("url") and f.get("vcodec") != "none"]
@@ -246,7 +258,6 @@ def extract_video(url: str):
             x.get("tbr") or 0
         ))
 
-    # SD နဲ့ HD နှစ်ခုစလုံးကို အသံပါပြီးသား အကောင်းဆုံး format နဲ့ တူတူပေးလိုက်ပါမည် (နာမည်ပဲ HD ဖြစ်သွားပါမည်)
     sd = get_best_by_height()
     hd = get_best_by_height()
     
@@ -262,8 +273,10 @@ def extract_video(url: str):
 
 @app.post("/download")
 async def download_video(data: DownloadRequest):
-    if STATE["maintenance"]: raise HTTPException(status_code=503, detail="Service maintenance လုပ်နေပါသည်။")
-    if not STATE["downloads_enabled"]: raise HTTPException(status_code=403, detail="Download လုပ်ဆောင်ချက်ကို Admin က ပိတ်ထားပါသည်။")
+    if STATE["maintenance"]: 
+        raise HTTPException(status_code=503, detail="Service maintenance လုပ်နေပါသည်။")
+    if not STATE["downloads_enabled"]: 
+        raise HTTPException(status_code=403, detail="Download လုပ်ဆောင်ချက်ကို Admin က ပိတ်ထားပါသည်။")
     url = validate_facebook_url(data.url)
     try:
         result = await asyncio.wait_for(asyncio.to_thread(extract_video, url), timeout=50)
@@ -285,8 +298,12 @@ class SettingsUpdate(BaseModel):
 
 @app.post("/admin/settings")
 def update_settings(data: SettingsUpdate, x_api_key: str = Header(default="")):
-    if x_api_key != APP_API_KEY: raise HTTPException(status_code=401, detail="Unauthorized")
-    if data.maintenance is not None: STATE["maintenance"] = data.maintenance
-    if data.downloads_enabled is not None: STATE["downloads_enabled"] = data.downloads_enabled
-    if data.notice is not None: STATE["notice"] = data.notice[:1000]
+    if x_api_key != APP_API_KEY: 
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    if data.maintenance is not None: 
+        STATE["maintenance"] = data.maintenance
+    if data.downloads_enabled is not None: 
+        STATE["downloads_enabled"] = data.downloads_enabled
+    if data.notice is not None: 
+        STATE["notice"] = data.notice[:1000]
     return {"ok": True, **STATE}
