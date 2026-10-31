@@ -1,5 +1,6 @@
 fastapi
-uvicorn[standard]
-python-telegram-bot>=20,<23
-httpx
+uvicorn
+python-telegram-bot
 yt-dlp
+httpx
+pydantic
