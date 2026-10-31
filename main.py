@@ -208,70 +208,36 @@ def validate_facebook_url(url: str) -> str:
 
 
 def extract_video(url: str):
-    opts = {
-        "quiet": True, 
-        "no_warnings": True, 
-        "skip_download": True, 
-        "noplaylist": True,
-        "socket_timeout": 20, 
-        "retries": 1, 
-        "extractor_retries": 1, 
-        "format": "best"
-    }
+    opts = {"quiet": True, "no_warnings": True, "skip_download": True, "noplaylist": True,
+            "socket_timeout": 20, "retries": 1, "extractor_retries": 1, "format": "best"}
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=False)
-    
-    if not info: 
-        raise ValueError("No video info")
-    
-    formats = [f for f in (info.get("formats") or []) if f.get("url")]
-    if info.get("url"): 
-        formats.append(info)
-
+    if not info: raise ValueError("No video info")
+    formats = [f for f in (info.get("formats") or []) if f.get("url") and f.get("vcodec") != "none"]
+    if info.get("url") and info.get("vcodec") != "none": formats.append(info)
     def score(f):
-        # အသံပါဝင်မှု (acodec != none) ကို ဦးစားပေးအမှတ်ပေးသည် (HD အသံထွက်စေရန်)
-        has_audio = 1 if f.get("acodec") not in (None, "none") else 0
-        is_mp4 = 1 if f.get("ext") == "mp4" else 0
-        return (has_audio, is_mp4, f.get("height") or 0, f.get("tbr") or 0)
-
+        return (1 if f.get("ext") == "mp4" else 0,
+                1 if f.get("acodec") not in (None, "none") else 0,
+                f.get("height") or 0, f.get("tbr") or 0)
     def choose(max_height=None, min_height=None):
-        options = [
-            f for f in formats
-            if (max_height is None or (f.get("height") or 0) <= max_height)
-            and (min_height is None or (f.get("height") or 0) >= min_height)
-        ]
-        # အသံပါသော format များကို ဦးစားပေး စစ်ထုတ်မည်
+        options = [f for f in formats
+                   if (max_height is None or (f.get("height") or 0) <= max_height)
+                   and (min_height is None or (f.get("height") or 0) >= min_height)]
         combined = [f for f in options if f.get("acodec") not in (None, "none")]
         pool = combined or options
         return max(pool, key=score) if pool else None
-
-    # SD အတွက် 480p နှင့်အောက်၊ HD အတွက် 720p နှင့်အထက်ကို ရွေးချယ်ပေးမည်
     sd = choose(max_height=480) or choose()
     hd = choose(min_height=720) or choose()
-    
-    # HD မရှိပါက SD ကို ယူမည်၊ SD သာရှိက HD ကို SD ဖြင့် ဖြည့်မည်
-    if not sd and hd:
-        sd = hd
-    if not hd and sd:
-        hd = sd
-
-    return {
-        "title": info.get("title") or "Facebook video", 
-        "thumbnail": info.get("thumbnail"),
-        "duration": info.get("duration"), 
-        "sd_url": sd.get("url") if sd else None,
-        "hd_url": hd.get("url") if hd else None,
-        "note": "Download URL များသည် ယာယီဖြစ်နိုင်ပြီး သက်တမ်းကုန်ပါက link အသစ်ပြန်ထုတ်ပါ။"
-    }
+    return {"title": info.get("title") or "Facebook video", "thumbnail": info.get("thumbnail"),
+            "duration": info.get("duration"), "sd_url": sd.get("url") if sd else None,
+            "hd_url": hd.get("url") if hd else None,
+            "note": "Download URL များသည် ယာယီဖြစ်နိုင်ပြီး သက်တမ်းကုန်ပါက link အသစ်ပြန်ထုတ်ပါ။"}
 
 
 @app.post("/download")
 async def download_video(data: DownloadRequest):
-    if STATE["maintenance"]: 
-        raise HTTPException(status_code=503, detail="Service maintenance လုပ်နေပါသည်။")
-    if not STATE["downloads_enabled"]: 
-        raise HTTPException(status_code=403, detail="Download လုပ်ဆောင်ချက်ကို Admin က ပိတ်ထားပါသည်။")
-    
+    if STATE["maintenance"]: raise HTTPException(status_code=503, detail="Service maintenance လုပ်နေပါသည်။")
+    if not STATE["downloads_enabled"]: raise HTTPException(status_code=403, detail="Download လုပ်ဆောင်ချက်ကို Admin က ပိတ်ထားပါသည်။")
     url = validate_facebook_url(data.url)
     try:
         result = await asyncio.wait_for(asyncio.to_thread(extract_video, url), timeout=50)
@@ -280,10 +246,8 @@ async def download_video(data: DownloadRequest):
     except Exception as exc:
         log.warning("Video extraction failed: %s", exc)
         raise HTTPException(status_code=422, detail="ဒီ video ကို မရယူနိုင်ပါ။ Public video link ဖြစ်ကြောင်း စစ်ပြီး ပြန်စမ်းပါ။")
-    
     if not result.get("sd_url") and not result.get("hd_url"):
         raise HTTPException(status_code=422, detail="ဒီ video အတွက် တိုက်ရိုက် download link မရရှိပါ။")
-    
     return {"ok": True, **result}
 
 
@@ -295,12 +259,8 @@ class SettingsUpdate(BaseModel):
 
 @app.post("/admin/settings")
 def update_settings(data: SettingsUpdate, x_api_key: str = Header(default="")):
-    if x_api_key != APP_API_KEY: 
-        raise HTTPException(status_code=401, detail="Unauthorized")
-    if data.maintenance is not None: 
-        STATE["maintenance"] = data.maintenance
-    if data.downloads_enabled is not None: 
-        STATE["downloads_enabled"] = data.downloads_enabled
-    if data.notice is not None: 
-        STATE["notice"] = data.notice[:1000]
+    if x_api_key != APP_API_KEY: raise HTTPException(status_code=401, detail="Unauthorized")
+    if data.maintenance is not None: STATE["maintenance"] = data.maintenance
+    if data.downloads_enabled is not None: STATE["downloads_enabled"] = data.downloads_enabled
+    if data.notice is not None: STATE["notice"] = data.notice[:1000]
     return {"ok": True, **STATE}
