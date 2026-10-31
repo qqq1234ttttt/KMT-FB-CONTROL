@@ -213,21 +213,35 @@ def extract_video(url: str):
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=False)
     if not info: raise ValueError("No video info")
+    
     formats = [f for f in (info.get("formats") or []) if f.get("url") and f.get("vcodec") != "none"]
     if info.get("url") and info.get("vcodec") != "none": formats.append(info)
+    
     def score(f):
         return (1 if f.get("ext") == "mp4" else 0,
                 1 if f.get("acodec") not in (None, "none") else 0,
                 f.get("height") or 0, f.get("tbr") or 0)
+                
     def choose(max_height=None, min_height=None):
         options = [f for f in formats
                    if (max_height is None or (f.get("height") or 0) <= max_height)
                    and (min_height is None or (f.get("height") or 0) >= min_height)]
+                   
+        # အသံပါသော format များကို ရှာရန်
         combined = [f for f in options if f.get("acodec") not in (None, "none")]
-        pool = combined or options
+        
+        if combined:
+            pool = combined
+        else:
+            # အကယ်၍ ရွေးထားသော height မှာ အသံပါတာမရှိပါက ဗီဒီယိုတစ်ခုလုံးထဲမှ အသံပါသည့် format ကို SD လိုမျိုး အစားထိုးယူမည်
+            all_combined = [f for f in formats if f.get("acodec") not in (None, "none")]
+            pool = all_combined if all_combined else options
+            
         return max(pool, key=score) if pool else None
+        
     sd = choose(max_height=480) or choose()
     hd = choose(min_height=720) or choose()
+    
     return {"title": info.get("title") or "Facebook video", "thumbnail": info.get("thumbnail"),
             "duration": info.get("duration"), "sd_url": sd.get("url") if sd else None,
             "hd_url": hd.get("url") if hd else None,
