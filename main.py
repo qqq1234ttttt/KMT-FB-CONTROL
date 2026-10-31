@@ -1,12 +1,10 @@
 import os
 import asyncio
 import logging
-import tempfile
 from typing import Optional
 from urllib.parse import urlparse
 
-from fastapi import FastAPI, Header, HTTPException, Request, BackgroundTasks
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
@@ -30,8 +28,9 @@ if not APP_API_KEY:
 ADMIN_ID = int(ADMIN_ID_RAW)
 STATE = {"maintenance": False, "downloads_enabled": True, "notice": ""}
 
-app = FastAPI(title="KMT FB DOWNLOAD API", version="1.2.0")
+app = FastAPI(title="KMT FB DOWNLOAD API", version="1.1.0")
 
+# Telegram Application instance ကို Global အနေဖြင့် သိမ်းဆည်းမည်
 telegram_app: Optional[Application] = None
 
 
@@ -167,6 +166,9 @@ async def shutdown_event():
         log.info("Telegram application shut down")
 
 
+# ==========================================
+# TELEGRAM WEBHOOK ENDPOINT
+# ==========================================
 @app.post("/telegram-webhook")
 async def telegram_webhook(request: Request):
     if telegram_app is None:
@@ -179,7 +181,7 @@ async def telegram_webhook(request: Request):
 
 @app.get("/")
 def root():
-    return {"service": "KMT FB DOWNLOAD API", "status": "ok"}
+    return {"service": "KMT FB DOWNLOAD API", "status": "ok", "health": "/health", "download_endpoint": "/download"}
 
 
 @app.get("/health")
@@ -194,7 +196,6 @@ def public_config():
 
 class DownloadRequest(BaseModel):
     url: str = Field(min_length=8, max_length=2000)
-    quality: str = Field(default="sd")  # "sd" သို့မဟုတ် "hd"
 
 
 def validate_facebook_url(url: str) -> str:
@@ -206,54 +207,60 @@ def validate_facebook_url(url: str) -> str:
     return url.strip()
 
 
-def download_with_ytdlp(url: str, quality: str, output_path: str):
-    # quality အလိုက် yt-dlp format သတ်မှတ်ခြင်း (ffmpeg ဖြင့် အသံနှင့်ရုပ် ပေါင်းပြီးသား mp4 ထွက်လာမည်)
-    if quality == "hd":
-        fmt = "bestvideo[height<=1080]+bestaudio/best[height<=1080]"
-    else:
-        fmt = "bestvideo[height<=480]+bestaudio/best[height<=480]"
+def extract_video(url: str):
+    opts = {"quiet": True, "no_warnings": True, "skip_download": True, "noplaylist": True,
+            "socket_timeout": 20, "retries": 1, "extractor_retries": 1, "format": "best"}
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        info = ydl.extract_info(url, download=False)
+    if not info: raise ValueError("No video info")
+    formats = [f for f in (info.get("formats") or []) if f.get("url") and f.get("vcodec") != "none"]
+    if info.get("url") and info.get("vcodec") != "none": formats.append(info)
+    def score(f):
+        return (1 if f.get("ext") == "mp4" else 0,
+                1 if f.get("acodec") not in (None, "none") else 0,
+                f.get("height") or 0, f.get("tbr") or 0)
+    def choose(max_height=None, min_height=None):
+        options = [f for f in formats
+                   if (max_height is None or (f.get("height") or 0) <= max_height)
+                   and (min_height is None or (f.get("height") or 0) >= min_height)]
+        combined = [f for f in options if f.get("acodec") not in (None, "none")]
+        pool = combined or options
+        return max(pool, key=score) if pool else None
+    sd = choose(max_height=480) or choose()
+    hd = choose(min_height=720) or choose()
+    return {"title": info.get("title") or "Facebook video", "thumbnail": info.get("thumbnail"),
+            "duration": info.get("duration"), "sd_url": sd.get("url") if sd else None,
+            "hd_url": hd.get("url") if hd else None,
+            "note": "Download URL များသည် ယာယီဖြစ်နိုင်ပြီး သက်တမ်းကုန်ပါက link အသစ်ပြန်ထုတ်ပါ။"}
 
-    ydl_opts = {
-        "format": fmt,
-        "outtmpl": output_path,
-        "merge_output_format": "mp4",
-        "quiet": True,
-        "no_warnings": True,
-        "socket_timeout": 30,
-    }
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        ydl.download([url])
 
-
-@app.post("/download-file")
-async def download_video_file(data: DownloadRequest, background_tasks: BackgroundTasks):
-    if STATE["maintenance"]: 
-        raise HTTPException(status_code=503, detail="Service maintenance လုပ်နေပါသည်။")
-    if not STATE["downloads_enabled"]: 
-        raise HTTPException(status_code=403, detail="Download လုပ်ဆောင်ချက်ကို Admin က ပိတ်ထားပါသည်။")
-    
+@app.post("/download")
+async def download_video(data: DownloadRequest):
+    if STATE["maintenance"]: raise HTTPException(status_code=503, detail="Service maintenance လုပ်နေပါသည်။")
+    if not STATE["downloads_enabled"]: raise HTTPException(status_code=403, detail="Download လုပ်ဆောင်ချက်ကို Admin က ပိတ်ထားပါသည်။")
     url = validate_facebook_url(data.url)
-    
-    # ယာယီဖိုင် ဖန်တီးခြင်း
-    temp_dir = tempfile.gettempdir()
-    file_id = os.path.join(temp_dir, f"fb_{os.urandom(8).hex()}.mp4")
-    
     try:
-        # Background သို့မဟုတ် thread ထဲတွင် ffmpeg ဖြင့် ချက်ချင်း Download လုပ်ပြီး ပေါင်းစပ်မည်
-        await asyncio.wait_for(
-            asyncio.to_thread(download_with_ytdlp, url, data.quality, file_id),
-            timeout=120
-        )
+        result = await asyncio.wait_for(asyncio.to_thread(extract_video, url), timeout=50)
     except asyncio.TimeoutError:
-        raise HTTPException(status_code=504, detail="ဗီဒီယို ဒေါင်းလုပ်ဆွဲချိန် ကုန်သွားပါပြီ။")
+        raise HTTPException(status_code=504, detail="Video စစ်ဆေးချိန်ကုန်သွားပါပြီ။ နောက်တစ်ကြိမ် စမ်းပါ။")
     except Exception as exc:
-        log.warning("Download failed: %s", exc)
-        raise HTTPException(status_code=422, detail="ဒီဗီဒီယိုကို ဒေါင်းလုပ်ဆွဲ၍ မရပါ။ Public link ဖြစ်မဖြစ် စစ်ပါ။")
-    
-    if not os.path.exists(file_id):
-        raise HTTPException(status_code=422, detail="ဗီဒီယိုဖိုင် ထုတ်ယူ၍မရပါ။")
+        log.warning("Video extraction failed: %s", exc)
+        raise HTTPException(status_code=422, detail="ဒီ video ကို မရယူနိုင်ပါ။ Public video link ဖြစ်ကြောင်း စစ်ပြီး ပြန်စမ်းပါ။")
+    if not result.get("sd_url") and not result.get("hd_url"):
+        raise HTTPException(status_code=422, detail="ဒီ video အတွက် တိုက်ရိုက် download link မရရှိပါ။")
+    return {"ok": True, **result}
 
-    # ဖိုင်ပို့ပြီးပါက ယာယီဖိုင်ကို ဖျက်ရန်
-    background_tasks.add_task(os.remove, file_id)
-    
-    return FileResponse(file_id, media_type="video/mp4", filename=f"facebook_{data.quality}.mp4")
+
+class SettingsUpdate(BaseModel):
+    maintenance: Optional[bool] = None
+    downloads_enabled: Optional[bool] = None
+    notice: Optional[str] = None
+
+
+@app.post("/admin/settings")
+def update_settings(data: SettingsUpdate, x_api_key: str = Header(default="")):
+    if x_api_key != APP_API_KEY: raise HTTPException(status_code=401, detail="Unauthorized")
+    if data.maintenance is not None: STATE["maintenance"] = data.maintenance
+    if data.downloads_enabled is not None: STATE["downloads_enabled"] = data.downloads_enabled
+    if data.notice is not None: STATE["notice"] = data.notice[:1000]
+    return {"ok": True, **STATE}
