@@ -208,44 +208,48 @@ def validate_facebook_url(url: str) -> str:
 
 
 def extract_video(url: str):
-    opts = {"quiet": True, "no_warnings": True, "skip_download": True, "noplaylist": True,
-            "socket_timeout": 20, "retries": 1, "extractor_retries": 1, "format": "best"}
+    opts = {
+        "quiet": True, 
+        "no_warnings": True, 
+        "skip_download": True, 
+        "noplaylist": True,
+        "socket_timeout": 20, 
+        "retries": 1, 
+        "extractor_retries": 1,
+        # Facebook အတွက် အသံနဲ့ရုပ် အသေအချာပါပြီးသား format ကို ဦးစားပေးရန်
+        "format": "best[ext=mp4]/best"
+    }
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=False)
-    if not info: raise ValueError("No video info")
     
-    formats = [f for f in (info.get("formats") or []) if f.get("url") and f.get("vcodec") != "none"]
-    if info.get("url") and info.get("vcodec") != "none": formats.append(info)
+    if not info: 
+        raise ValueError("No video info")
     
-    def score(f):
-        return (1 if f.get("ext") == "mp4" else 0,
-                1 if f.get("acodec") not in (None, "none") else 0,
-                f.get("height") or 0, f.get("tbr") or 0)
-                
-    def choose(max_height=None, min_height=None):
-        options = [f for f in formats
-                   if (max_height is None or (f.get("height") or 0) <= max_height)
-                   and (min_height is None or (f.get("height") or 0) >= min_height)]
-                   
-        # အသံပါသော format များကို ရှာရန်
-        combined = [f for f in options if f.get("acodec") not in (None, "none")]
-        
-        if combined:
-            pool = combined
-        else:
-            # အကယ်၍ ရွေးထားသော height မှာ အသံပါတာမရှိပါက ဗီဒီယိုတစ်ခုလုံးထဲမှ အသံပါသည့် format ကို SD လိုမျိုး အစားထိုးယူမည်
-            all_combined = [f for f in formats if f.get("acodec") not in (None, "none")]
-            pool = all_combined if all_combined else options
+    # ဗီဒီယို URL ရယူရန် (အသံပါမှုကို သေချာစစ်မည်)
+    video_url = info.get("url")
+    formats = info.get("formats") or []
+    
+    # အသံနဲ့ရုပ် နှစ်ခုစလုံး ပါဝင်ပြီးသား format ကို ရှာမည်
+    best_format = None
+    for f in formats:
+        if f.get("url") and f.get("vcodec", "none") != "none" and f.get("acodec", "none") != "none":
+            best_format = f
+            break
             
-        return max(pool, key=score) if pool else None
-        
-    sd = choose(max_height=480) or choose()
-    hd = choose(min_height=720) or choose()
+    # အကယ်၍ သီးသန့်မတွေ့ရင် info ထဲက url ကို ယူမည်
+    final_url = best_format.get("url") if best_format else video_url
     
-    return {"title": info.get("title") or "Facebook video", "thumbnail": info.get("thumbnail"),
-            "duration": info.get("duration"), "sd_url": sd.get("url") if sd else None,
-            "hd_url": hd.get("url") if hd else None,
-            "note": "Download URL များသည် ယာယီဖြစ်နိုင်ပြီး သက်တမ်းကုန်ပါက link အသစ်ပြန်ထုတ်ပါ။"}
+    if not final_url:
+        raise ValueError("Direct link not found")
+
+    # APK မှာ SD ရော HD ရော နှိပ်ရင် အသံမလပ်အောင် URL တူတူကိုပဲ ပို့ပေးလိုက်ပါမည်
+    return {
+        "title": info.get("title") or "Facebook video", 
+        "thumbnail": info.get("thumbnail"),
+        "duration": info.get("duration"), 
+        "sd_url": final_url,
+        "hd_url": final_url,
+        "note": "Download URL များသည် ယာယီဖြစ်နိုင်ပါသည်။"}
 
 
 @app.post("/download")
