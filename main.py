@@ -209,13 +209,13 @@ def validate_facebook_url(url: str) -> str:
 
 def extract_video(url: str):
     opts = {
-        "quiet": True,
-        "no_warnings": True,
-        "skip_download": True,
+        "quiet": True, 
+        "no_warnings": True, 
+        "skip_download": True, 
         "noplaylist": True,
-        "socket_timeout": 20,
-        "retries": 1,
-        "extractor_retries": 1,
+        "socket_timeout": 20, 
+        "retries": 1, 
+        "extractor_retries": 1, 
         "format": "best"
     }
     with yt_dlp.YoutubeDL(opts) as ydl:
@@ -226,36 +226,34 @@ def extract_video(url: str):
     
     formats = info.get("formats") or []
     
-    # ရနိုင်သမျှ formats ထဲက video နဲ့ audio နှစ်ခုစလုံး (သို့မဟုတ်) အသံအပါအဝင် အကောင်းဆုံးရမည့်ဟာကို ရွေးရန်
-    def choose_format(min_h=None, max_h=None):
-        filtered = []
-        for f in formats:
-            vcodec = f.get("vcodec", "none")
-            acodec = f.get("acodec", "none")
-            height = f.get("height") or 0
-            
-            # Resolution အတိုင်းအဆ စစ်ဆေးရန်
-            if min_h and height < min_h: continue
-            if max_h and height > max_h: continue
-            
-            # URL ရှိရမည်
-            if not f.get("url"): continue
-            
-            filtered.append(f)
-        
-        if not filtered:
-            return None
-            
-        # အသံပါတဲ့ဟာကို ဦးစားပေးရွေးချယ်ရန် (acodec != none)
-        with_audio = [f for f in filtered if f.get("acodec") != "none"]
-        if with_audio:
-            return max(with_audio, key=lambda x: (x.get("height") or 0, x.get("tbr") or 0))
-        
-        # အသံမပါရင်တောင်မှ အမြင့်ဆုံး resolution ကို ယူရန်
-        return max(filtered, key=lambda x: (x.get("height") or 0, x.get("tbr") or 0))
+    # ရုပ်ပါသည့် (Video codec ရှိပြီး height > 0 ရှိသော) format များကိုသာ ရယူရန်
+    video_formats = [
+        f for f in formats 
+        if f.get("url") and f.get("vcodec", "none") != "none" and (f.get("height") or 0) > 0
+    ]
+    
+    if not video_formats and info.get("url") and info.get("vcodec", "none") != "none":
+        video_formats = [info]
 
-    sd = choose_format(max_h=480) or choose_format()
-    hd = choose_format(min_h=720) or choose_format()
+    def choose(max_height=None, min_height=None):
+        options = [
+            f for f in video_formats
+            if (max_height is None or (f.get("height") or 0) <= max_height)
+            and (min_height is None or (f.get("height") or 0) >= min_height)
+        ]
+        if not options:
+            options = video_formats
+        if not options:
+            return None
+        
+        # အသံပါသော (acodec ရှိသော) format ကို ဦးစားပေးရွေးရန်
+        combined = [f for f in options if f.get("acodec", "none") not in ("none", None)]
+        pool = combined if combined else options
+        
+        return max(pool, key=lambda x: (x.get("height") or 0, x.get("tbr") or 0))
+
+    sd = choose(max_height=480) or choose()
+    hd = choose(min_height=720) or choose()
 
     return {
         "title": info.get("title") or "Facebook video", 
