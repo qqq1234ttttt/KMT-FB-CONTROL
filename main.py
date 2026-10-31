@@ -227,10 +227,10 @@ def extract_video(url: str):
     formats = info.get("formats") or []
     
     # အသံပါပြီးသား (Muxed) format တွေကို အဓိကရှာပါ
-    muxed_formats = [f for f in formats if f.get("url") and f.get("vcodec") != "none" and f.get("acodec"] not in (None, "none")]
+    muxed_formats = [f for f in formats if f.get("url") and f.get("vcodec") != "none" and f.get("acodec") not in (None, "none")]
     
     if not muxed_formats:
-        muxed_formats = [f for f in formats if f.get("url") and f.get("vcodec") != "none"]
+        muxed_formats = [f for f in formats if f.get("url") and f.get("vcodec"] != "none"]
         
     if info.get("url") and info.get("vcodec") != "none":
         muxed_formats.append(info)
